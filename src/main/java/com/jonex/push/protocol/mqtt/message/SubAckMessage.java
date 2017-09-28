@@ -13,12 +13,12 @@ public class SubAckMessage extends Message {
 		super(fixedHeader, variableHeader, payload);
 	}
 	
-	@Override
+
 	public PackageIdVariableHeader getVariableHeader() {
 		return (PackageIdVariableHeader)super.getVariableHeader();
 	}
 	
-	@Override
+
 	public SubAckPayload getPayload() {
 		return (SubAckPayload)super.getPayload();
 	}

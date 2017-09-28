@@ -22,9 +22,7 @@ public class PackageIDManager {
 	/**
 	 * 获取包ID
 	 * @return int
-	 * @author zer0
-	 * @version 1.0
-	 * @date 2015-3-5
+	 *
 	 */
 	public static synchronized int getNextMessageId(){
 		int startingMessageId = nextMsgId;

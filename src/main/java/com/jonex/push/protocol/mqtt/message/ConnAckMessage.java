@@ -53,7 +53,7 @@ public class ConnAckMessage extends Message {
 		super(fixedHeader, variableHeader);
 	}
 	
-	@Override
+
 	public ConnAckVariableHeader getVariableHeader(){
 		return (ConnAckVariableHeader)super.getVariableHeader();
 	}

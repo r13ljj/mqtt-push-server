@@ -13,12 +13,12 @@ public class ConnectMessage extends Message {
 		super(fixedHeader, variableHeader, payload);
 	}
 	
-	@Override
+
 	public ConnectVariableHeader getVariableHeader() {
 		return (ConnectVariableHeader)super.getVariableHeader();
 	}
 	
-	@Override
+
 	public ConnectPayload getPayload() {
 		return (ConnectPayload)super.getPayload();
 	}

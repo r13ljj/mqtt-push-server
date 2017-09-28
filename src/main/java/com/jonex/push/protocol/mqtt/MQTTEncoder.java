@@ -25,7 +25,7 @@ public class MQTTEncoder extends MessageToByteEncoder<Message> {
     private final static byte[] EMPTY = new byte[0];
     private final int UTF8_FIX_LENGTH = 2;//UTF编码的byte，最开始必须为2字节的长度字段
 
-    @Override
+
     protected void encode(ChannelHandlerContext ctx, Message msg, ByteBuf out) throws Exception {
         ByteBufAllocator byteBufAllocator = ctx.alloc();
         ByteBuf encodedByteBuf;

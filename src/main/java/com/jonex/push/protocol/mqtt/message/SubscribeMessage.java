@@ -13,12 +13,12 @@ public class SubscribeMessage extends Message {
 		super(fixedHeader, variableHeader, payload);
 	}
 	
-	@Override
+
 	public PackageIdVariableHeader getVariableHeader() {
 		return (PackageIdVariableHeader)super.getVariableHeader();
 	}
 	
-	@Override
+
 	public SubscribePayload getPayload() {
 		return (SubscribePayload)super.getPayload();
 	}

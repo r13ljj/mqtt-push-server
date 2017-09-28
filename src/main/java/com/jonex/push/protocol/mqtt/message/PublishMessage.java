@@ -25,12 +25,12 @@ public class PublishMessage extends Message {
 		super(fixedHeader, variableHeader, payload);
 	}
 	
-	@Override
+
 	public PublishVariableHeader getVariableHeader() {
 		return (PublishVariableHeader)super.getVariableHeader();
 	}
 	
-	@Override
+
 	public ByteBuf getPayload() {
 		return (ByteBuf)super.getPayload();
 	}

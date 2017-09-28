@@ -13,12 +13,12 @@ public class UnSubscribeMessage extends Message {
 		super(fixedHeader, variableHeader, payload);
 	}
 	
-	@Override
+
 	public PackageIdVariableHeader getVariableHeader() {
 		return (PackageIdVariableHeader)super.getVariableHeader();
 	}
 	
-	@Override
+
 	public UnSubscribePayload getPayload() {
 		return (UnSubscribePayload)super.getPayload();
 	}
