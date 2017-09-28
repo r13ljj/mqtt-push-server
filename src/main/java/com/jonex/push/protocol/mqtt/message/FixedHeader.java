@@ -29,14 +29,13 @@ public class FixedHeader {
         this.retain = retain;
     }
 
-    public FixedHeader(MessageType messageType, boolean dup, Qos Qos, boolean retain, int messageLength) {
+    public FixedHeader(MessageType messageType, boolean dup, com.jonex.push.protocol.mqtt.message.Qos qos, boolean retain, int messageLength) {
         this.messageType = messageType;
         this.dup = dup;
-        this.Qos = Qos;
+        Qos = qos;
         this.retain = retain;
         this.messageLength = messageLength;
     }
-
 
     public static FixedHeader getConnectFixedHeader(){
         return new FixedHeader(MessageType.CONNECT, false, com.jonex.push.protocol.mqtt.message.Qos.AT_MOST_ONCE, false);

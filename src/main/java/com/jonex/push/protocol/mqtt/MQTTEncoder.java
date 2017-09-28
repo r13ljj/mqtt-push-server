@@ -11,6 +11,8 @@ import io.netty.util.CharsetUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
+
 /**
  * @Author jonex [r13ljj@gmail.com]
  * @Date 2017/9/26 11:37
@@ -32,7 +34,35 @@ public class MQTTEncoder extends MessageToByteEncoder<Message> {
                 encodedByteBuf = encodeConnectMessage(byteBufAllocator, (ConnectMessage)msg);
                 break;
             case CONNACK:
+                encodedByteBuf = encodeConnAckMessage(byteBufAllocator, (ConnAckMessage)msg);
+            case PUBLISH:
+                encodedByteBuf = encodePublishMessage(byteBufAllocator, (PublishMessage)msg);
+            case SUBSCRIBE:
+                encodedByteBuf = encodeSubscribeMessage(byteBufAllocator, (SubscribeMessage)msg);
+                break;
+            case UNSUBSCRIBE:
+                encodedByteBuf = encodeUnSubcribeMessage(byteBufAllocator, (UnSubscribeMessage)msg);
+                break;
+            case SUBACK:
+                encodedByteBuf = encodeSubAckMessage(byteBufAllocator, (SubAckMessage)msg);
+                break;
+            case UNSUBACK:
+            case PUBACK:
+            case PUBREC:
+            case PUBREL:
+            case PUBCOMP:
+                encodedByteBuf = encodeMessageByteFixedHeaderAndPackageId(byteBufAllocator, msg);
+                break;
+            case PINGREQ:
+            case PINGRESP:
+            case DISCONNECT:
+                encodedByteBuf = encodeMessageByteFixedHeader(byteBufAllocator, msg);
+                break;
+            default:
+                throw new IllegalArgumentException(
+                        "未知的MQTT协议类型："+msg.getFixedHeader().getMessageType().value());
         }
+        out.writeBytes(encodedByteBuf);
     }
 
     private ByteBuf encodeConnectMessage(ByteBufAllocator byteBufAllocator, ConnectMessage connectMessage){
@@ -118,6 +148,183 @@ public class MQTTEncoder extends MessageToByteEncoder<Message> {
             byteBuf.writeShort(passwordBytes.length);
             byteBuf.writeBytes(passwordBytes);
         }
+
+        return byteBuf;
+    }
+
+    private ByteBuf encodeConnAckMessage(ByteBufAllocator byteBufAllocator, ConnAckMessage connAckMessage){
+        //由协议3.1.1 P28可知，ConnAck消息长度固定为4字节
+        ByteBuf byteBuf = byteBufAllocator.buffer(4);
+        byteBuf.writeBytes(encodeFixHeader(connAckMessage.getFixedHeader()));//写固定头部第一个字节
+        byteBuf.writeByte(2);//写入可变头部长度，固定为2字节
+        byteBuf.writeByte(connAckMessage.getVariableHeader().isSessionPresent()?0x01:0x00);//写入连接确认标志
+        byteBuf.writeByte(connAckMessage.getVariableHeader().getStatus().value());//写入返回码
+        return byteBuf;
+    }
+
+    private ByteBuf encodePublishMessage(ByteBufAllocator byteBufAllocator, PublishMessage message){
+        int fixHeaderSize = 1;//固定头部有1字节+可变部分长度字节
+        int variableHeaderSize = 0;
+        int payloadSize = 0;//荷载大小
+
+        FixedHeader fixedHeader = message.getFixedHeader();
+        PublishVariableHeader variableHeader = message.getVariableHeader();
+        ByteBuf payload = message.getPayload().duplicate();
+
+        String topicName = variableHeader.getTopic();
+        byte[] topicNameBytes = encodeStringUTF8(topicName);
+
+        variableHeaderSize += UTF8_FIX_LENGTH;
+        variableHeaderSize += topicNameBytes.length;
+        variableHeaderSize += fixedHeader.getQos().value()>0?2:0;//根据qos判断packageID的长度是否需要加上
+        payloadSize = payload.readableBytes();
+        fixHeaderSize += countVariableLengthInt(variableHeaderSize+payloadSize);
+
+        //生成bytebuf
+        ByteBuf byteBuf = byteBufAllocator.buffer(fixHeaderSize + variableHeaderSize + payloadSize);
+        //写入byteBuf
+        byteBuf.writeBytes(encodeFixHeader(fixedHeader));//写固定头部第一个字节
+        byteBuf.writeBytes(encodeRemainLength(variableHeaderSize + payloadSize));//写固定头部第二个字节，剩余部分长度
+        byteBuf.writeShort(topicNameBytes.length);
+        byteBuf.writeBytes(topicNameBytes);
+        if (fixedHeader.getQos().value()>0) {
+            byteBuf.writeShort(variableHeader.getPackageID());
+        }
+        byteBuf.writeBytes(payload);//写入荷载
+
+        return byteBuf;
+    }
+
+    private ByteBuf encodeSubscribeMessage(ByteBufAllocator bufAllocator,
+                                           SubscribeMessage message){
+        int fixHeaderSize = 1;//固定头部有1字节+可变部分长度字节
+        int variableHeaderSize = 2;//协议P37页，订阅类型的可变头部长度都为2
+        int payloadSize = 0;//荷载大小
+
+        FixedHeader fixedHeader = message.getFixedHeader();
+        PackageIdVariableHeader variableHeader = message.getVariableHeader();
+        SubscribePayload payload = message.getPayload();
+
+        //遍历订阅消息组，计算荷载长度
+        for (TopicSubscribe topic : payload.getTopicSubscribes()) {
+            String topicName = topic.getTopicFilter();
+            byte[] topicNameBytes = encodeStringUTF8(topicName);
+            payloadSize += UTF8_FIX_LENGTH;
+            payloadSize += topicNameBytes.length;
+            payloadSize += 1;//添加qos的长度，qos长度只能为1
+        }
+
+        fixHeaderSize += countVariableLengthInt(variableHeaderSize+payloadSize);
+
+        //生成bytebuf
+        ByteBuf byteBuf = bufAllocator.buffer(fixHeaderSize + variableHeaderSize + payloadSize);
+        //写入byteBuf
+        byteBuf.writeBytes(encodeFixHeader(fixedHeader));//写固定头部第一个字节
+        byteBuf.writeBytes(encodeRemainLength(variableHeaderSize + payloadSize));//写固定头部第二个字节，剩余部分长度
+        byteBuf.writeShort(variableHeader.getPackageID());//写入可变头部中的包ID
+        //写入荷载
+        for (TopicSubscribe topic : payload.getTopicSubscribes()) {
+            String topicName = topic.getTopicFilter();
+            byte[] topicNameBytes = encodeStringUTF8(topicName);
+            byteBuf.writeShort(topicNameBytes.length);
+            byteBuf.writeBytes(topicNameBytes);
+            byteBuf.writeByte(topic.getQos().value());
+        }
+
+        return byteBuf;
+    }
+
+    private ByteBuf encodeUnSubcribeMessage(ByteBufAllocator bufAllocator,
+                                            UnSubscribeMessage message){
+        int fixHeaderSize = 1;//固定头部有1字节+可变部分长度字节
+        int variableHeaderSize = 2;//协议P42页，取消订阅类型的可变头部长度固定为2
+        int payloadSize = 0;//荷载大小
+
+        FixedHeader fixedHeader = message.getFixedHeader();
+        PackageIdVariableHeader variableHeader = message.getVariableHeader();
+        UnSubscribePayload payload = message.getPayload();
+
+        for (String topic : payload.getTopics()) {
+            byte[] topicBytes = encodeStringUTF8(topic);
+            payloadSize += UTF8_FIX_LENGTH;
+            payloadSize += topicBytes.length;
+        }
+
+        fixHeaderSize += countVariableLengthInt(variableHeaderSize+payloadSize);
+
+        //生成bytebuf
+        ByteBuf byteBuf = bufAllocator.buffer(fixHeaderSize + variableHeaderSize + payloadSize);
+        //写入byteBuf
+        byteBuf.writeBytes(encodeFixHeader(fixedHeader));//写固定头部第一个字节
+        byteBuf.writeBytes(encodeRemainLength(variableHeaderSize + payloadSize));//写固定头部第二个字节，剩余部分长度
+        byteBuf.writeShort(variableHeader.getPackageID());//写入可变头部中的包ID
+        //写入荷载
+        for (String topic : payload.getTopics()) {
+            byte[] topicBytes = encodeStringUTF8(topic);
+            byteBuf.writeShort(topicBytes.length);
+            byteBuf.writeBytes(topicBytes);
+        }
+
+        return byteBuf;
+    }
+
+    private ByteBuf encodeSubAckMessage(ByteBufAllocator bufAllocator,
+                                        SubAckMessage message){
+        int fixHeaderSize = 1;//固定头部有1字节+可变部分长度字节
+        int variableHeaderSize = 2;//协议P42页，取消订阅类型的可变头部长度固定为2
+        int payloadSize = 0;//荷载大小
+
+        FixedHeader fixedHeader = message.getFixedHeader();
+        PackageIdVariableHeader variableHeader = message.getVariableHeader();
+        SubAckPayload payload = message.getPayload();
+
+        List<Integer> grantedQosLevels = payload.getGrantedQosLevel();
+        payloadSize += grantedQosLevels.size();
+
+        fixHeaderSize += countVariableLengthInt(variableHeaderSize+payloadSize);
+
+        //生成bytebuf
+        ByteBuf byteBuf = bufAllocator.buffer(fixHeaderSize + variableHeaderSize + payloadSize);
+        //写入byteBuf
+        byteBuf.writeBytes(encodeFixHeader(fixedHeader));//写固定头部第一个字节
+        byteBuf.writeBytes(encodeRemainLength(variableHeaderSize + payloadSize));//写固定头部第二个字节，剩余部分长度
+        byteBuf.writeShort(variableHeader.getPackageID());//写入可变头部中的包ID
+        for (Integer qos : grantedQosLevels) {
+            byteBuf.writeByte(qos);
+        }
+
+        return byteBuf;
+    }
+
+    private ByteBuf encodeMessageByteFixedHeaderAndPackageId(ByteBufAllocator bufAllocator,
+                                                             Message message){
+
+        int fixHeaderSize = 1;//固定头部有1字节+可变部分长度字节
+        int variableHeaderSize = 2;//只包含包ID的可变头部，长度固定为2
+
+        FixedHeader fixedHeader = message.getFixedHeader();
+        PackageIdVariableHeader variableHeader = (PackageIdVariableHeader)message.getVariableHeader();
+
+        fixHeaderSize += countVariableLengthInt(variableHeaderSize);
+
+        //生成bytebuf
+        ByteBuf byteBuf = bufAllocator.buffer(fixHeaderSize + variableHeaderSize);
+        //写入byteBuf
+        byteBuf.writeBytes(encodeFixHeader(fixedHeader));//写固定头部第一个字节
+        byteBuf.writeBytes(encodeRemainLength(variableHeaderSize));//写固定头部第二个字节，剩余部分长度
+        byteBuf.writeShort(variableHeader.getPackageID());//写入可变头部中的包ID
+
+        return byteBuf;
+    }
+
+    private ByteBuf encodeMessageByteFixedHeader(ByteBufAllocator bufAllocator, Message message){
+
+        int fixHeaderSize = 2;//固定头部加上一个字节的剩余长度（剩余长度为0）
+        FixedHeader fixedHeader = message.getFixedHeader();
+
+        ByteBuf byteBuf = bufAllocator.buffer(fixHeaderSize);
+        byteBuf.writeBytes(encodeFixHeader(fixedHeader));
+        byteBuf.writeByte(0);//写入剩余长度，没有可变头部和荷载，所以剩余长度为0
 
         return byteBuf;
     }
